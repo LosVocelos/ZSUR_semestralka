@@ -1,2 +1,2 @@
-# ZSUR_semstralka
+# ZSUR_semestralka
 Semestrální práce ze ZSUR

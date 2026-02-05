@@ -18,7 +18,7 @@ def load_data(filepath:str) -> list[tuple[float, float, int]]:
     return data
 
 
-def plot_data(data:list[tuple[float, float]], labels:list[int]) -> None:
+def plot_data(data:list[tuple[float, float]] | np.ndarray, labels:list[int] | np.ndarray) -> None:
     """
     Vykreslení dat do plotu
     """

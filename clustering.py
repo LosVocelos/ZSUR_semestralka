@@ -47,7 +47,7 @@ def clustering_level(data):
     # Spočítáme si skoky mezi jednotlivými hladinami:
     dist_jumps = dists_np[1:] - dists_np[:-1]
     # 4. Zjistíme, ve kterém kroku došlo k největšímu skoku (naše shlukovací hladina) a vyvodíme počet shluků:
-    n = len(distances) - np.argmax(dist_jumps)
+    n = len(distances) - np.argmax(dist_jumps).astype(int)
     # (Není to zcela nejspolehlivější způsob, například, kdyby poslední shluk byl od předchozích výrazně dále,
     # třeba 2x, získali bychom pouze 2 shluky, protože by došlo k ještě většímu hladinovému skoku,
     # ale v tomto příkladě, s těmito daty, je tato metoda dostačující)
@@ -164,7 +164,7 @@ def standard_kmeans(data, k, max_iters=100):
     # 1. Náhodně vybereme k bodů jako počáteční středy (centroidy)
     indices = np.random.choice(len(data), k, replace=False)
     centroids = data[indices.astype(int)]
-    labels = None
+    labels = np.array([])
 
     for _ in range(max_iters):
         # 2. Přiřadíme body k nejbližšímu centroidu
@@ -202,41 +202,39 @@ def direct_partitioning(data, k):
 
 
 def bisecting_kmeans(data, k):
-    # Každý prvek v 'clusters_data' bude pole bodů patřících do jednoho shluku
-    clusters_data = [data]
-
-    while len(clusters_data) < k:
-        # 1. Vybereme shluk s největším SSE (nerovnoměrné dělení)
-        # Pro každý shluk spočítáme jeho SSE vzhledem k jeho těžišti
+    # Na začátku máme jeden seznam obsahující INDEXY všech bodů
+    # clusters_indices = [[0, 1, 2, 3, 4, ...]]
+    clusters_indices = [np.arange(len(data))]
+    while len(clusters_indices) < k:
+        # 1. Najdeme shluk s největším SSE
         sses = []
-        for cluster in clusters_data:
-            centroid = cluster.mean(axis=0)
-            sses.append(np.sum((cluster - centroid) ** 2))
-
-        idx_to_split = np.argmax(sses)
-        cluster_to_split = clusters_data.pop(idx_to_split)
-
-        # 2. Rozdělíme vybraný shluk na dva pomocí standardního 2-means
-        sub_centroids, sub_labels = standard_kmeans(cluster_to_split, k=2)
-
-        # 3. Přidáme dva nové shluky zpět do seznamu
-        clusters_data.append(cluster_to_split[sub_labels == 0])
-        clusters_data.append(cluster_to_split[sub_labels == 1])
-
-    # Rekonstrukce finálních labelů a centroidů pro srovnání
+        for idx_list in clusters_indices:
+            cluster_points = data[idx_list]
+            centroid = cluster_points.mean(axis=0)
+            sse = np.sum((cluster_points - centroid) ** 2)
+            sses.append(sse)
+        # Shluk, který budeme dělit
+        split_cluster_idx = np.argmax(sses)
+        indices_to_split = clusters_indices.pop(split_cluster_idx)
+        # Vybereme data odpovídající těmto indexům
+        points_to_split = data[indices_to_split]
+        # 2. Rozdělíme na dva pomocí 2-means
+        # sub_labels jsou 0 a 1 v rámci tohoto podvýběru
+        _, sub_labels = standard_kmeans(points_to_split, k=2)
+        # 3. Rozdělíme původní indexy podle sub_labels a vrátíme do seznamu
+        clusters_indices.append(indices_to_split[sub_labels == 0])
+        clusters_indices.append(indices_to_split[sub_labels == 1])
+    # --- FINÁLNÍ SKLÁDÁNÍ VÝSLEDKŮ ---
     final_labels = np.zeros(len(data), dtype=int)
-    final_centroids = []
-    for cluster_id, cluster in enumerate(clusters_data):
-        centroid = cluster.mean(axis=0)
-        final_centroids.append(centroid)
-        # Klasifikujeme původní data
-        for point in cluster:
-            # (Pozn: v reálné aplikaci bychom si raději drželi indexy)
-            idx = np.where((data == point).all(axis=1))[0][0]
-            final_labels[idx] = cluster_id
-
-    sse = calculate_sse(data, np.array(final_centroids), final_labels)
-    return np.array(final_centroids), final_labels.tolist(), sse
+    final_centroids = np.zeros((len(clusters_indices), np.size(data[0])), dtype=np.float32)
+    for cluster_id, idx_list in enumerate(clusters_indices):
+        # Přiřadíme ID shluku bodům na správných indexech (žádné hledání!)
+        final_labels[idx_list] = cluster_id
+        # Spočítáme finální centroid
+        centroid = data[idx_list].mean(axis=0)
+        final_centroids[cluster_id] = centroid
+    total_sse = calculate_sse(data, final_centroids, final_labels)
+    return final_centroids, final_labels, total_sse
 
 
 if __name__ == '__main__':
