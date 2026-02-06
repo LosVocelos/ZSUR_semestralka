@@ -202,39 +202,98 @@ def direct_partitioning(data, k):
 
 
 def bisecting_kmeans(data, k):
-    # Na začátku máme jeden seznam obsahující INDEXY všech bodů
-    # clusters_indices = [[0, 1, 2, 3, 4, ...]]
-    clusters_indices = [np.arange(len(data))]
+    # Na začátku máme jeden seznam obsahující indexy všech bodů
+    clusters_indices = [np.arange(len(data))]  # [[0, 1, 2, 3, 4, ...]]
+    centroids = [data.mean(axis=0)]  # střed všech bodů, první centroid
+
     while len(clusters_indices) < k:
         # 1. Najdeme shluk s největším SSE
         sses = []
-        for idx_list in clusters_indices:
+        for i, idx_list in enumerate(clusters_indices):
             cluster_points = data[idx_list]
-            centroid = cluster_points.mean(axis=0)
-            sse = np.sum((cluster_points - centroid) ** 2)
+            sse = np.sum((cluster_points - centroids[i]) ** 2)
             sses.append(sse)
+
         # Shluk, který budeme dělit
         split_cluster_idx = np.argmax(sses)
         indices_to_split = clusters_indices.pop(split_cluster_idx)
-        # Vybereme data odpovídající těmto indexům
         points_to_split = data[indices_to_split]
+        # Odstraníme příslušný centroid, bude nahrazen 2 novými
+        centroids.pop(split_cluster_idx)
+
         # 2. Rozdělíme na dva pomocí 2-means
         # sub_labels jsou 0 a 1 v rámci tohoto podvýběru
-        _, sub_labels = standard_kmeans(points_to_split, k=2)
+        cs, sub_labels = standard_kmeans(points_to_split, k=2)
+        centroids.extend(cs)
+
         # 3. Rozdělíme původní indexy podle sub_labels a vrátíme do seznamu
         clusters_indices.append(indices_to_split[sub_labels == 0])
         clusters_indices.append(indices_to_split[sub_labels == 1])
+
     # --- FINÁLNÍ SKLÁDÁNÍ VÝSLEDKŮ ---
     final_labels = np.zeros(len(data), dtype=int)
-    final_centroids = np.zeros((len(clusters_indices), np.size(data[0])), dtype=np.float32)
+    final_centroids = np.array(centroids, dtype=np.float32)
     for cluster_id, idx_list in enumerate(clusters_indices):
-        # Přiřadíme ID shluku bodům na správných indexech (žádné hledání!)
+        # Přiřadíme ID shluku bodům na správných indexech
         final_labels[idx_list] = cluster_id
-        # Spočítáme finální centroid
-        centroid = data[idx_list].mean(axis=0)
-        final_centroids[cluster_id] = centroid
     total_sse = calculate_sse(data, final_centroids, final_labels)
     return final_centroids, final_labels, total_sse
+
+
+def iterative_optimization(data, initial_labels, R):
+    n, d = data.shape
+    labels = initial_labels.copy().astype(int)
+
+    # 1. Inicializace s a střední hodnoty
+    s = np.bincount(labels, minlength=R).astype(float)
+    centroids = np.array([data[labels == r].mean(axis=0) if s[r] > 0
+                          else np.zeros(d) for r in range(R)])
+
+    iteration = 0
+    while True:
+        iteration += 1
+        any_moved = False
+
+        # 2. Procházíme body
+        for k in range(n):
+            i = labels[k]
+            x_hat = data[k]
+
+            # 3. Podmínka s_i > 1
+            if s[i] <= 1:
+                continue
+
+            # Spočítáme čtverce vzdáleností od x_hat ke všem těžištím najednou
+            # (R, d) - (d,) -> (R, d) -> sum(axis=1) -> (R,)
+            dists_sq = np.sum((centroids - x_hat) ** 2, axis=1)
+
+            # Připravíme si pole koeficientů (R,)
+            coeffs = s / (s + 1)
+            A_all = coeffs * dists_sq
+            A_all[i] = np.inf  # abychom při hledání min A_j nevybrali aktuální shluk i
+
+            # Hodnota pro aktuální shluk i
+            A_i = (s[i] / (s[i] - 1)) * dists_sq[i]
+
+            # Najdeme j* (index nejmenšího přírůstku)
+            j_star = np.argmin(A_all)
+            A_j_star = A_all[j_star]
+
+            # 4. Rozhodneme o přesunu
+            if A_i > A_j_star:
+                print("Moving a point")
+                # 5. Aktualizace středy a s
+                centroids[i] -= (x_hat - centroids[i]) / (s[i] - 1)
+                centroids[j_star] += (x_hat - centroids[j_star]) / (s[j_star] + 1)
+                s[i] -= 1
+                s[j_star] += 1
+                labels[k] = j_star
+                any_moved = True
+
+        if not any_moved:
+            break
+
+    return centroids, labels
 
 
 if __name__ == '__main__':
@@ -263,12 +322,16 @@ if __name__ == '__main__':
     # K-means
     K_TARGET = 3  # Počet shluků, který nám vyšel z předchozích metod (MAXIMIN atd.)
 
-    # Provedení obou metod
+    # Přímé dělení
     c_dir, l_dir, sse_dir = direct_partitioning(data, K_TARGET)
-    c_bis, l_bis, sse_bis = bisecting_kmeans(data, K_TARGET)
-    print(f"\nVýsledky:")
     print(f"Přímé dělení - SSE: {sse_dir:.2f}")
-    print(f"Binární dělení - SSE: {sse_bis:.2f}")
-
     plot_data(data_p, l_dir)
+
+    # Nerovnoměrné binární dělení
+    c_bis, l_bis, sse_bis = bisecting_kmeans(data, K_TARGET)
+    print(f"Binární dělení - SSE: {sse_bis:.2f}")
     plot_data(data_p, l_bis)
+
+    opt_centroids, opt_labels = iterative_optimization(data, l_bis, 3)
+    print(f"Iterativní optimalizace: {"Optimalizováno" if (opt_labels-l_bis).any() else "Beze změny"}")
+
