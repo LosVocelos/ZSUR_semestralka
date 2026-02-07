@@ -1,5 +1,6 @@
 from generic import load_data, plot_data, np
 
+
 def clustering_level(data):
     """
     Metoda shlukové hladiny
@@ -297,11 +298,12 @@ def iterative_optimization(data, initial_labels, R):
 
 
 if __name__ == '__main__':
-    # cl_cm_mm = 0b111    # Jednoduchý přepínač, které metody shlukování chceme spustit
-    cl_cm_mm = 0b000
     data_list = load_data("data_shl.txt")
     data_p = [(p[0], p[1]) for p in data_list]
     data = np.array(data_p, dtype=np.float32)
+
+    # cl_cm_mm = 0b111    # Jednoduchý přepínač, které metody shlukování chceme spustit
+    cl_cm_mm = 0b000
 
     # Shluková hladina
     if cl_cm_mm & 0b100:
@@ -333,5 +335,5 @@ if __name__ == '__main__':
     plot_data(data_p, l_bis)
 
     opt_centroids, opt_labels = iterative_optimization(data, l_bis, 3)
-    print(f"Iterativní optimalizace: {"Optimalizováno" if (opt_labels-l_bis).any() else "Beze změny"}")
+    print(f"Iterativní optimalizace: {'Optimalizováno' if (opt_labels-l_bis).any() else 'Beze změny'}")
 
