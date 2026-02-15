@@ -327,12 +327,12 @@ if __name__ == '__main__':
     # Přímé dělení
     c_dir, l_dir, sse_dir = direct_partitioning(data, K_TARGET)
     print(f"Přímé dělení - SSE: {sse_dir:.2f}")
-    plot_data(data_p, l_dir)
+    plot_data(data_p, l_dir, "Direct partitioning")
 
     # Nerovnoměrné binární dělení
     c_bis, l_bis, sse_bis = bisecting_kmeans(data, K_TARGET)
     print(f"Binární dělení - SSE: {sse_bis:.2f}")
-    plot_data(data_p, l_bis)
+    plot_data(data_p, l_bis, "Bisecting k-means")
 
     opt_centroids, opt_labels = iterative_optimization(data, l_bis, 3)
     print(f"Iterativní optimalizace: {'Optimalizováno' if (opt_labels-l_bis).any() else 'Beze změny'}")

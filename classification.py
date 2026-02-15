@@ -1,4 +1,4 @@
-from generic import load_data, plot_data, np
+from generic import load_data, plot_data, plot_boundaries, np
 from clustering import standard_kmeans
 
 
@@ -48,11 +48,12 @@ class MinDistanceClassifier:
 
 
 class KNNClassifier:
-    def __init__(self, k_neighbors=1):
+    def __init__(self, k_neighbors=1, vote=True):
         self.X_train = None
         self.y_train = None
         self.classes = None
         self.k = k_neighbors
+        self.vote = vote
 
     def train(self, X, y):
         self.X_train = X
@@ -87,6 +88,9 @@ class KNNClassifier:
 
         # 5. Vybereme třídu s nejmenší průměrnou vzdáleností
         return min(class_averages, key=class_averages.get)
+
+    def predict(self, point):
+        return self.predict_vote(point) if self.vote else self.predict_dist(point)
 
 
 class BayesClassifier:
@@ -131,16 +135,14 @@ class BayesClassifier:
     def predict(self, point):
         point = np.array(point)  # Vektor (2,)
 
-        # 1. Výpočet rozdílů (point - mu) pro všechny třídy najednou
-        # point: (2,), self.mu: (R, 2) -> diff: (R, 2)
+        # 1. Výpočet rozdílů
         diff = point - self.mu
 
         # 2. Výpočet exponentu pro všechny třídy najednou
         # Potřebujeme (diff[i]^T @ inv_sigma[i] @ diff[i]) pro každé i.
-        # K tomu je v NumPy nejlepší funkce np.einsum (Einsteinova sumační konvence)
         # 'ki,kij,kj->k' znamená:
         # k = index třídy, i a j = souřadnice x,y
-        # Pro každé k vynásob diff[k,i] * inv_sigma[k,i,j] * diff[k,j] a sečti přes i,j
+        # Pro každé k vynásobíme diff[k,i] * inv_sigma[k,i,j] * diff[k,j] a sečti přes i,j
         exponent_term = np.einsum('ki,kij,kj->k', diff, self.inv_sigma, diff)
 
         # 3. Finální výpočet f(x|omega) * P(omega) pro všechny třídy
@@ -151,6 +153,64 @@ class BayesClassifier:
         return self.classes[np.argmax(posteriors)]
 
 
+class LinearDiscriminantClassifier:
+    def __init__(self, rosenblatt=True, alpha=0.1, b=1.0, max_iters=10000):
+        self.ros = rosenblatt
+        self.alpha = alpha          # Konstanta učení
+        self.b = b                  # Pásmo necitlivosti (pro upravenou metodu)
+        self.max_iters = max_iters
+        self.weights = None
+        self.classes = None
+        self.history = None
+
+    def _prepare_data(self, X, y, target_class):
+        """Rozšíření o bias a zrcadlení vektorů ostatních tříd."""
+        X_aug = np.column_stack([X, np.ones(len(X))])
+        # Zrcadlení: vektory cílové třídy zůstávají, ostatní * -1
+        y_binary = np.where(y == target_class, 1, -1)
+        return X_aug * y_binary[:, np.newaxis]
+
+    def train_binary(self, X, y, target_class):
+        Y = self._prepare_data(X, y, target_class)
+        n_features = Y.shape[1]
+        w = np.zeros(n_features)  # Počáteční váhy
+        b = (0 if self.ros else self.b)
+
+        iterations = 0
+        for _ in range(self.max_iters):
+            converged = True
+            iterations += 1
+            for y_vec in Y:
+                # Výpočet skalárního součinu
+                val = np.dot(w, y_vec)
+
+                # Rozhodnutí o opravě
+                if val < b:
+                    w = w + self.alpha * y_vec
+                    converged = False
+
+            if converged:
+                break
+
+        return w, iterations
+
+    def train(self, X, y):
+        self.classes = np.unique(y)
+        self.weights = {}
+        self.history = {}
+
+        # Trénujeme jeden klasifikátor pro každou třídu (One-vs-Rest)
+        for cls in self.classes:
+            w, iters = self.train_binary(X, y, cls)
+            self.weights[cls] = w
+            self.history[cls] = iters
+            print(f"Metoda {'rosenblatt' if self.ros else 'konst'}, třída {cls}, alfa {self.alpha}: {iters} iterací")
+
+    def predict(self, point):
+        p_aug = np.append(point, 1)
+        scores = {cls: np.dot(self.weights[cls], p_aug) for cls in self.classes}
+        return max(scores, key=scores.get)
+
 if __name__ == '__main__':
     data_list = load_data("data_kla.txt")
     data = np.array(data_list, dtype=np.float32)
@@ -158,8 +218,8 @@ if __name__ == '__main__':
     y_all = data[:,2].astype(int)
     X_train, y_train, X_test, y_test = split_data(X_all, y_all)
 
-    plot_data(X_train, y_train)
-    plot_data(X_test, y_test)
+    plot_data(X_train, y_train, "Training data")
+    plot_data(X_test, y_test, "Testing data")
 
     # Klasifikátor podle minimální vzdálenosti
     print("Minimal distance Classifier")
@@ -167,19 +227,32 @@ if __name__ == '__main__':
     mdc.train(X_train, y_train)
     results = [mdc.predict(X) == y for X, y in zip(X_test, y_test)]
     print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
+    plot_boundaries(mdc, X_all, y_all, "Minimal distance Classifier")
 
     # Klasifikátor podle nejbližšího souseda
     print("k-Nearest Neighbours Classifier")
     knn = KNNClassifier(3)
     knn.train(X_train, y_train)
-    results = [knn.predict_vote(X) == y for X, y in zip(X_test, y_test)]
+    results = [knn.predict(X) == y for X, y in zip(X_test, y_test)]
     print(f"Accuracy (vote): {sum(results)/len(results) *100:.2f}%")
-    results = [knn.predict_dist(X) == y for X, y in zip(X_test, y_test)]
+    plot_boundaries(knn, X_all, y_all, "k-Nearest Neighbours Classifier (vote)")
+    knn.vote = False
+    results = [knn.predict(X) == y for X, y in zip(X_test, y_test)]
     print(f"Accuracy (dist): {sum(results)/len(results) *100:.2f}%")
+    plot_boundaries(knn, X_all, y_all, "k-Nearest Neighbours Classifier (dist)")
 
     # Bayesův klasifikátor
     print("Bayes Classifier")
-    bayes = BayesClassifier()
-    bayes.train(X_train, y_train)
-    results = [bayes.predict(X) == y for X, y in zip(X_test, y_test)]
+    bay = BayesClassifier()
+    bay.train(X_train, y_train)
+    results = [bay.predict(X) == y for X, y in zip(X_test, y_test)]
     print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
+    plot_boundaries(bay, X_all, y_all, "Bayes Classifier")
+
+    # Klasifikátor s lineárními diskriminaèními funkcemi
+    print("Linear Discriminant Classifier")
+    lin = LinearDiscriminantClassifier(False)
+    lin.train(X_train, y_train)
+    results = [lin.predict(X) == y for X, y in zip(X_test, y_test)]
+    print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
+    plot_boundaries(lin, X_all, y_all, "Linear Discriminant Classifier")
