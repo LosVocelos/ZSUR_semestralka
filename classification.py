@@ -183,9 +183,8 @@ class LinearDiscriminantClassifier:
             for y_vec in Y:
                 # Výpočet skalárního součinu
                 val = np.dot(w, y_vec)
-
                 # Rozhodnutí o opravě
-                if val < b:
+                if val <= b:
                     w = w + self.alpha * y_vec
                     converged = False
 
@@ -251,8 +250,16 @@ if __name__ == '__main__':
 
     # Klasifikátor s lineárními diskriminaèními funkcemi
     print("Linear Discriminant Classifier")
-    lin = LinearDiscriminantClassifier(False)
+    lin = LinearDiscriminantClassifier(False, max_iters=10000)
     lin.train(X_train, y_train)
     results = [lin.predict(X) == y for X, y in zip(X_test, y_test)]
     print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
     plot_boundaries(lin, X_all, y_all, "Linear Discriminant Classifier")
+
+    # Klasifikátor s lineárními diskriminaèními funkcemi
+    print("Linear Discriminant Classifier (Rosenblatt)")
+    lin = LinearDiscriminantClassifier(True, max_iters=10000)
+    lin.train(X_train, y_train)
+    results = [lin.predict(X) == y for X, y in zip(X_test, y_test)]
+    print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
+    plot_boundaries(lin, X_all, y_all, "Linear Discriminant Classifier (Rosenblatt)")
