@@ -1,7 +1,7 @@
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+# from matplotlib.animation import FuncAnimation
 
 
 def load_data(filepath:str) -> list[tuple[float, float, int]]:
@@ -18,19 +18,29 @@ def load_data(filepath:str) -> list[tuple[float, float, int]]:
     return data
 
 
-def plot_data(data:list[tuple[float, float]] | np.ndarray, labels:list[int] | np.ndarray, title:str) -> None:
+def plot_clusters(data: np.ndarray, labels: np.ndarray, title: str, centroids: np.ndarray = None) -> None:
     """
-    Vykreslení dat do plotu
+    Vykreslení dat s barevným odlišením shluků a volitelným zobrazením centroidů.
     """
-    xpoints = np.array([t[0] for t in data])
-    ypoints = np.array([t[1] for t in data])
+    plt.figure(figsize=(8, 6))
 
-    plt.scatter(xpoints, ypoints, c=labels, edgecolors='k', cmap='rainbow', s=20)
+    # Vykreslení samotných bodů
+    plt.scatter(data[:, 0], data[:, 1], c=labels, edgecolors='k', cmap='rainbow', s=20)
+
+    # Pokud jsou zadány centroidy, vykreslíme je výrazně do grafu
+    if centroids is not None:
+        plt.scatter(centroids[:, 0], centroids[:, 1], c='black', marker='X', s=200, label='Centroidy')
+        plt.legend()
+
     plt.title(title)
+    plt.grid(True, linestyle='--', alpha=0.5)
     plt.show()
 
 
 def plot_boundaries(classifier, X, y, title):
+    """
+    Vykreslení dat a hranic rozhodování příslušného algoritmu
+    """
     h = 0.1  # Krok mřížky
     x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
     y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1

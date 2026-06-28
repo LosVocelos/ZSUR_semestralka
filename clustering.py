@@ -1,5 +1,4 @@
-from generic import load_data, plot_data, np
-
+import numpy as np
 
 def clustering_level(data):
     """
@@ -48,12 +47,13 @@ def clustering_level(data):
     # Spočítáme si skoky mezi jednotlivými hladinami:
     dist_jumps = dists_np[1:] - dists_np[:-1]
     # 4. Zjistíme, ve kterém kroku došlo k největšímu skoku (naše shlukovací hladina) a vyvodíme počet shluků:
-    n = len(distances) - np.argmax(dist_jumps).astype(int)
+    cut_idx = np.argmax(dist_jumps).astype(int)
+    n = len(distances) - cut_idx
     # (Není to zcela nejspolehlivější způsob, například, kdyby poslední shluk byl od předchozích výrazně dále,
     # třeba 2x, získali bychom pouze 2 shluky, protože by došlo k ještě většímu hladinovému skoku,
     # ale v tomto příkladě, s těmito daty, je tato metoda dostačující)
 
-    return n
+    return n, dists_np, dist_jumps, cut_idx
 
 
 def chain_map(data, start_node=0):
@@ -110,7 +110,7 @@ def chain_map(data, start_node=0):
     # VÝSLEDEK: Spočítáme, kolik hran v řetězci je delších než H
     breaks = np.sum(chain_distances > h)
 
-    return breaks + 1
+    return breaks + 1, chain_distances, h
 
 
 def maximin(data, q=0.7, start_node=0):
@@ -158,7 +158,7 @@ def maximin(data, q=0.7, start_node=0):
 
     # Vzhledem k povaze a rozmístění dat v prostoru je výsledek této metody VELMI citlivý jak na volbu parametru q,
     # tak na počátečím bodě (volbě prvního středu)
-    return len(center_indices)
+    return len(center_indices), center_indices
 
 
 def standard_kmeans(data, k, max_iters=100):
@@ -295,45 +295,3 @@ def iterative_optimization(data, initial_labels, R):
             break
 
     return centroids, labels
-
-
-if __name__ == '__main__':
-    data_list = load_data("data_shl.txt")
-    data_p = [(p[0], p[1]) for p in data_list]
-    data = np.array(data_p, dtype=np.float32)
-
-    # cl_cm_mm = 0b111    # Jednoduchý přepínač, které metody shlukování chceme spustit
-    cl_cm_mm = 0b000
-
-    # Shluková hladina
-    if cl_cm_mm & 0b100:
-        print("Number of clusters (by clustering levels):", clustering_level(data))
-
-    # Řetězová mapa
-    if cl_cm_mm & 0b010:
-        for n in np.random.randint(0, len(data), 10):
-            print(f"Number of clusters (by chain map, start_node={n:4}):", chain_map(data, n))
-
-    # MAXIMIN
-    if cl_cm_mm & 0b001:
-        for q in np.arange(0.4, 0.6, 0.02, dtype=np.float32):
-            n = np.random.randint(0, len(data), 1)[0]
-            print(f"Number of clusters (by maximin, {q=:.2f}, {n=:4}):", maximin(data, q, n))
-
-    # ----------------
-    # K-means
-    K_TARGET = 3  # Počet shluků, který nám vyšel z předchozích metod (MAXIMIN atd.)
-
-    # Přímé dělení
-    c_dir, l_dir, sse_dir = direct_partitioning(data, K_TARGET)
-    print(f"Přímé dělení - SSE: {sse_dir:.2f}")
-    plot_data(data_p, l_dir, "Direct partitioning")
-
-    # Nerovnoměrné binární dělení
-    c_bis, l_bis, sse_bis = bisecting_kmeans(data, K_TARGET)
-    print(f"Binární dělení - SSE: {sse_bis:.2f}")
-    plot_data(data_p, l_bis, "Bisecting k-means")
-
-    opt_centroids, opt_labels = iterative_optimization(data, l_bis, 3)
-    print(f"Iterativní optimalizace: {'Optimalizováno' if (opt_labels-l_bis).any() else 'Beze změny'}")
-

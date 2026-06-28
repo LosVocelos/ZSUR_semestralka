@@ -1,4 +1,4 @@
-from generic import load_data, plot_data, plot_boundaries, np
+from generic import load_data, plot_data, plot_boundaries, np, plt
 from clustering import standard_kmeans
 
 
@@ -210,6 +210,125 @@ class LinearDiscriminantClassifier:
         scores = {cls: np.dot(self.weights[cls], p_aug) for cls in self.classes}
         return max(scores, key=scores.get)
 
+
+class SimpleNeuralNetwork:
+    def __init__(self, layer_sizes, learning_rate=0.01):
+        """
+        layer_sizes: Seznam velikostí vrstev, např. [2, 8, 3]
+                     (2 vstupy, 8 neuronů ve skryté vrstvě, 3 výstupy)
+        """
+        self.sizes = layer_sizes
+        self.lr = learning_rate
+        self.weights = []
+        self.biases = []
+
+        # NAHODNÁ INICIALIZACE VAH (He / Xavier-like inicializace)
+        # U neuronových sítí nemůžeme začít s nulami, protože by se všechny
+        # skryté neurony učily identicky (problém symetrie).
+        for i in range(len(self.sizes) - 1):
+            w = np.random.randn(self.sizes[i], self.sizes[i + 1]) * np.sqrt(2.0 / self.sizes[i])
+            b = np.zeros((1, self.sizes[i + 1]))
+            self.weights.append(w)
+            self.biases.append(b)
+
+    def _sigmoid(self, z):
+        return 1.0 / (1.0 + np.exp(-np.clip(z, -500, 500)))
+
+    def _sigmoid_derivative(self, a):
+        # a je již aktivovaná hodnota sigmoid(z)
+        return a * (1.0 - a)
+
+    def _softmax(self, z):
+        # Stabilní softmax zabraňující přetečení exponentu
+        shift_z = z - np.max(z, axis=-1, keepdims=True)
+        exps = np.exp(shift_z)
+        return exps / np.sum(exps, axis=-1, keepdims=True)
+
+    def forward(self, X):
+        """Dopředný průchod sítí."""
+        self.a = [X]  # Aktivace jednotlivých vrstev (a[0] je vstup X)
+        self.z = []  # Hodnoty před aktivací (z = w*a + b)
+
+        # Průchod skrytými vrstvami se Sigmoidou
+        for i in range(len(self.weights) - 1):
+            z_curr = np.dot(self.a[-1], self.weights[i]) + self.biases[i]
+            a_curr = self._sigmoid(z_curr)
+            self.z.append(z_curr)
+            self.a.append(a_curr)
+
+        # Výstupní vrstva se Softmaxem (vhodné pro klasifikaci do více tříd)
+        z_out = np.dot(self.a[-1], self.weights[-1]) + self.biases[-1]
+        a_out = self._softmax(z_out)
+        self.z.append(z_out)
+        self.a.append(a_out)
+        return a_out
+
+    def backward(self, Y):
+        """Zpětný průchod (Backpropagation) a aktualizace vah."""
+        m = Y.shape[0]  # Počet vzorků v dávce (1 pro SGD, N pro Batch GD)
+        dW_list = []
+        db_list = []
+
+        # Chyba na výstupu (pro kombinaci Softmax + Cross-Entropy je derivace velmi jednoduchá: a - Y)
+        dZ = self.a[-1] - Y
+
+        # Zpětná propagace od výstupu ke vstupu
+        for i in reversed(range(len(self.weights))):
+            dW = np.dot(self.a[i].T, dZ) / m
+            db = np.sum(dZ, axis=0, keepdims=True) / m
+            dW_list.insert(0, dW)
+            db_list.insert(0, db)
+
+            if i > 0:
+                # Výpočet chyby pro předchozí skrytou vrstvu
+                dZ = np.dot(dZ, self.weights[i].T) * self._sigmoid_derivative(self.a[i])
+
+        # Aktualizace vah a biasů
+        for i in range(len(self.weights)):
+            self.weights[i] -= self.lr * dW_list[i]
+            self.biases[i] -= self.lr * db_list[i]
+
+    def train(self, X, y, epochs, sgd=False):
+        num_classes = self.sizes[-1]
+
+        # Převedení labelů na One-Hot kódování
+        Y = np.zeros((len(y), num_classes))
+        Y[np.arange(len(y)), y.astype(int)] = 1
+
+        loss_history = []
+
+        for epoch in range(epochs):
+            if sgd:
+                # --- STOCHASTIC GRADIENT DESCENT (SGD) ---
+                # Náhodné promíchání dat v každé epoše
+                indices = np.arange(len(X))
+                np.random.shuffle(indices)
+                epoch_loss = 0
+
+                for idx in indices:
+                    x_sample = X[idx:idx + 1]
+                    y_sample = Y[idx:idx + 1]
+
+                    out = self.forward(x_sample)
+                    self.backward(y_sample)
+                    epoch_loss -= np.sum(y_sample * np.log(out + 1e-15))
+
+                loss_history.append(epoch_loss / len(X))
+
+            else:
+                # --- BATCH GRADIENT DESCENT ---
+                # Výpočet pro všechna data najednou
+                out = self.forward(X)
+                self.backward(Y)
+                loss = -np.mean(np.sum(Y * np.log(out + 1e-15), axis=1))
+                loss_history.append(loss)
+
+        return loss_history
+
+    def predict(self, x):
+        return self.forward(x)[0].argmax()
+
+
 if __name__ == '__main__':
     data_list = load_data("data_kla.txt")
     data = np.array(data_list, dtype=np.float32)
@@ -248,18 +367,82 @@ if __name__ == '__main__':
     print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
     plot_boundaries(bay, X_all, y_all, "Bayes Classifier")
 
-    # Klasifikátor s lineárními diskriminaèními funkcemi
+    # Klasifikátor s lineárními diskriminačními funkcemi
     print("Linear Discriminant Classifier")
-    lin = LinearDiscriminantClassifier(False, max_iters=10000)
+    lin = LinearDiscriminantClassifier(False, max_iters=1000)
     lin.train(X_train, y_train)
     results = [lin.predict(X) == y for X, y in zip(X_test, y_test)]
     print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
     plot_boundaries(lin, X_all, y_all, "Linear Discriminant Classifier")
 
-    # Klasifikátor s lineárními diskriminaèními funkcemi
+    # Klasifikátor s lineárními diskriminačními funkcemi
     print("Linear Discriminant Classifier (Rosenblatt)")
-    lin = LinearDiscriminantClassifier(True, max_iters=10000)
+    lin = LinearDiscriminantClassifier(True, max_iters=1000)
     lin.train(X_train, y_train)
     results = [lin.predict(X) == y for X, y in zip(X_test, y_test)]
     print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
     plot_boundaries(lin, X_all, y_all, "Linear Discriminant Classifier (Rosenblatt)")
+
+    # NN
+    # Simulace ne-separabilních 2D dat (3 třídy)
+    # np.random.seed(42)
+    # X_train = np.vstack([
+    #     np.random.normal([-1, -1], 0.8, (100, 2)),
+    #     np.random.normal([2, 1], 0.8, (100, 2)),
+    #     np.random.normal([-1, 2], 0.8, (100, 2))
+    # ])
+    # y_train = np.array([0] * 100 + [1] * 100 + [2] * 100)
+
+    # --- EXPERIMENT 1: Vliv topologie ---
+    # Srovnáme lineární model [2, 3] vs. mělkou síť [2, 6, 3] vs. hlubší síť [2, 16, 8, 3]
+    topologies = {
+        "Lineární (bez skryté vrstvy) [2, 3]": [2, 3],
+        "Jedna skrytá vrstva [2, 8, 3]": [2, 8, 3],
+        "Dvě skryté vrstvy [2, 16, 8, 3]": [2, 16, 8, 3]
+    }
+
+    plt.figure(figsize=(10, 5))
+    for name, topo in topologies.items():
+        nn = SimpleNeuralNetwork(layer_sizes=topo, learning_rate=0.05)
+        loss = nn.train(X_train, y_train, epochs=200, method='batch')
+        plt.plot(loss, label=name)
+    plt.title("Srovnání topologií (Batch GD)")
+    plt.xlabel("Epocha")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.show()
+
+    # --- EXPERIMENT 2: Způsob trénování (SGD vs Batch GD) ---
+    plt.figure(figsize=(10, 5))
+    nn_batch = SimpleNeuralNetwork(layer_sizes=[2, 8, 3], learning_rate=0.05)
+    loss_batch = nn_batch.train(X_train, y_train, epochs=300, method='batch')
+
+    nn_sgd = SimpleNeuralNetwork(layer_sizes=[2, 8, 3], learning_rate=0.05)
+    loss_sgd = nn_sgd.train(X_train, y_train, epochs=300, method='sgd')
+
+    plt.plot(loss_batch, label="Batch Gradient Descent")
+    plt.plot(loss_sgd, label="Stochastic Gradient Descent (SGD)")
+    plt.title("Srovnání způsobů trénování")
+    plt.xlabel("Epocha")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.show()
+
+    # --- EXPERIMENT 3: Volba konstanty učení (Learning Rate) ---
+    lrs = [0.5, 0.05, 0.001]
+    plt.figure(figsize=(10, 5))
+    for lr in lrs:
+        nn = SimpleNeuralNetwork(layer_sizes=[2, 8, 3], learning_rate=lr)
+        loss = nn.train(X_train, y_train, epochs=200, method='batch')
+        plt.plot(loss, label=f"Alfa (learning rate) = {lr}")
+    plt.title("Vliv konstanty učení na konvergenci")
+    plt.xlabel("Epocha")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.show()
+
+    for name, topo in topologies.items():
+        nn = SimpleNeuralNetwork(layer_sizes=topo, learning_rate=0.05)
+        loss = nn.train(X_train, y_train, epochs=200, method='batch')
+        plot_boundaries(nn, X_all, y_all, f"NN {name}")
+
