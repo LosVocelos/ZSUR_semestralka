@@ -12,7 +12,7 @@ def clustering_level(data):
     distances = []
 
     # 1. Předvýpočet matice vzdáleností (všechny body proti všem)
-    # Využíváme "broadcasting" pro extrémně rychlý výpočet
+    # Využíváme "broadcasting" pro rychlý výpočet
     diff = data[:, np.newaxis, :] - data[np.newaxis, :, :]
     dist_matrix = np.sqrt(np.sum(diff**2, axis=-1))
 

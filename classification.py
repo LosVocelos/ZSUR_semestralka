@@ -1,4 +1,5 @@
-from generic import load_data, plot_data, plot_boundaries, np, plt
+# from generic import load_data, plot_clusters, plot_boundaries, np, plt
+import numpy as np
 from clustering import standard_kmeans
 
 
@@ -142,7 +143,7 @@ class BayesClassifier:
         # Potřebujeme (diff[i]^T @ inv_sigma[i] @ diff[i]) pro každé i.
         # 'ki,kij,kj->k' znamená:
         # k = index třídy, i a j = souřadnice x,y
-        # Pro každé k vynásobíme diff[k,i] * inv_sigma[k,i,j] * diff[k,j] a sečti přes i,j
+        # Pro každé k vynásobíme diff[k,i] * inv_sigma[k,i,j] * diff[k,j] a sečteme přes i,j
         exponent_term = np.einsum('ki,kij,kj->k', diff, self.inv_sigma, diff)
 
         # 3. Finální výpočet f(x|omega) * P(omega) pro všechny třídy
@@ -288,7 +289,7 @@ class SimpleNeuralNetwork:
             self.weights[i] -= self.lr * dW_list[i]
             self.biases[i] -= self.lr * db_list[i]
 
-    def train(self, X, y, epochs, sgd=False):
+    def train(self, X, y, epochs=300, sgd=False):
         num_classes = self.sizes[-1]
 
         # Převedení labelů na One-Hot kódování
@@ -326,123 +327,125 @@ class SimpleNeuralNetwork:
         return loss_history
 
     def predict(self, x):
-        return self.forward(x)[0].argmax()
+        # Zajistíme, aby vstup byl vždy 2D (1, 2)
+        x_arr = np.atleast_2d(x)
+        return self.forward(x_arr)[0].argmax()
 
-
-if __name__ == '__main__':
-    data_list = load_data("data_kla.txt")
-    data = np.array(data_list, dtype=np.float32)
-    X_all = data[:,:2]
-    y_all = data[:,2].astype(int)
-    X_train, y_train, X_test, y_test = split_data(X_all, y_all)
-
-    plot_data(X_train, y_train, "Training data")
-    plot_data(X_test, y_test, "Testing data")
-
-    # Klasifikátor podle minimální vzdálenosti
-    print("Minimal distance Classifier")
-    mdc = MinDistanceClassifier(3)
-    mdc.train(X_train, y_train)
-    results = [mdc.predict(X) == y for X, y in zip(X_test, y_test)]
-    print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
-    plot_boundaries(mdc, X_all, y_all, "Minimal distance Classifier")
-
-    # Klasifikátor podle nejbližšího souseda
-    print("k-Nearest Neighbours Classifier")
-    knn = KNNClassifier(3)
-    knn.train(X_train, y_train)
-    results = [knn.predict(X) == y for X, y in zip(X_test, y_test)]
-    print(f"Accuracy (vote): {sum(results)/len(results) *100:.2f}%")
-    plot_boundaries(knn, X_all, y_all, "k-Nearest Neighbours Classifier (vote)")
-    knn.vote = False
-    results = [knn.predict(X) == y for X, y in zip(X_test, y_test)]
-    print(f"Accuracy (dist): {sum(results)/len(results) *100:.2f}%")
-    plot_boundaries(knn, X_all, y_all, "k-Nearest Neighbours Classifier (dist)")
-
-    # Bayesův klasifikátor
-    print("Bayes Classifier")
-    bay = BayesClassifier()
-    bay.train(X_train, y_train)
-    results = [bay.predict(X) == y for X, y in zip(X_test, y_test)]
-    print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
-    plot_boundaries(bay, X_all, y_all, "Bayes Classifier")
-
-    # Klasifikátor s lineárními diskriminačními funkcemi
-    print("Linear Discriminant Classifier")
-    lin = LinearDiscriminantClassifier(False, max_iters=1000)
-    lin.train(X_train, y_train)
-    results = [lin.predict(X) == y for X, y in zip(X_test, y_test)]
-    print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
-    plot_boundaries(lin, X_all, y_all, "Linear Discriminant Classifier")
-
-    # Klasifikátor s lineárními diskriminačními funkcemi
-    print("Linear Discriminant Classifier (Rosenblatt)")
-    lin = LinearDiscriminantClassifier(True, max_iters=1000)
-    lin.train(X_train, y_train)
-    results = [lin.predict(X) == y for X, y in zip(X_test, y_test)]
-    print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
-    plot_boundaries(lin, X_all, y_all, "Linear Discriminant Classifier (Rosenblatt)")
-
-    # NN
-    # Simulace ne-separabilních 2D dat (3 třídy)
-    # np.random.seed(42)
-    # X_train = np.vstack([
-    #     np.random.normal([-1, -1], 0.8, (100, 2)),
-    #     np.random.normal([2, 1], 0.8, (100, 2)),
-    #     np.random.normal([-1, 2], 0.8, (100, 2))
-    # ])
-    # y_train = np.array([0] * 100 + [1] * 100 + [2] * 100)
-
-    # --- EXPERIMENT 1: Vliv topologie ---
-    # Srovnáme lineární model [2, 3] vs. mělkou síť [2, 6, 3] vs. hlubší síť [2, 16, 8, 3]
-    topologies = {
-        "Lineární (bez skryté vrstvy) [2, 3]": [2, 3],
-        "Jedna skrytá vrstva [2, 8, 3]": [2, 8, 3],
-        "Dvě skryté vrstvy [2, 16, 8, 3]": [2, 16, 8, 3]
-    }
-
-    plt.figure(figsize=(10, 5))
-    for name, topo in topologies.items():
-        nn = SimpleNeuralNetwork(layer_sizes=topo, learning_rate=0.05)
-        loss = nn.train(X_train, y_train, epochs=200, method='batch')
-        plt.plot(loss, label=name)
-    plt.title("Srovnání topologií (Batch GD)")
-    plt.xlabel("Epocha")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.show()
-
-    # --- EXPERIMENT 2: Způsob trénování (SGD vs Batch GD) ---
-    plt.figure(figsize=(10, 5))
-    nn_batch = SimpleNeuralNetwork(layer_sizes=[2, 8, 3], learning_rate=0.05)
-    loss_batch = nn_batch.train(X_train, y_train, epochs=300, method='batch')
-
-    nn_sgd = SimpleNeuralNetwork(layer_sizes=[2, 8, 3], learning_rate=0.05)
-    loss_sgd = nn_sgd.train(X_train, y_train, epochs=300, method='sgd')
-
-    plt.plot(loss_batch, label="Batch Gradient Descent")
-    plt.plot(loss_sgd, label="Stochastic Gradient Descent (SGD)")
-    plt.title("Srovnání způsobů trénování")
-    plt.xlabel("Epocha")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.show()
-
-    # --- EXPERIMENT 3: Volba konstanty učení (Learning Rate) ---
-    lrs = [0.5, 0.05, 0.001]
-    plt.figure(figsize=(10, 5))
-    for lr in lrs:
-        nn = SimpleNeuralNetwork(layer_sizes=[2, 8, 3], learning_rate=lr)
-        loss = nn.train(X_train, y_train, epochs=200, method='batch')
-        plt.plot(loss, label=f"Alfa (learning rate) = {lr}")
-    plt.title("Vliv konstanty učení na konvergenci")
-    plt.xlabel("Epocha")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.show()
-
-    for name, topo in topologies.items():
-        nn = SimpleNeuralNetwork(layer_sizes=topo, learning_rate=0.05)
-        loss = nn.train(X_train, y_train, epochs=200, method='batch')
-        plot_boundaries(nn, X_all, y_all, f"NN {name}")
-
+#
+# if __name__ == '__main__':
+#     data_list = load_data("data_kla.txt")
+#     data = np.array(data_list, dtype=np.float32)
+#     X_all = data[:,:2]
+#     y_all = data[:,2].astype(int)
+#     X_train, y_train, X_test, y_test = split_data(X_all, y_all)
+#
+#     plot_clusters(X_train, y_train, "Training data")
+#     plot_clusters(X_test, y_test, "Testing data")
+#
+#     # Klasifikátor podle minimální vzdálenosti
+#     print("Minimal distance Classifier")
+#     mdc = MinDistanceClassifier(3)
+#     mdc.train(X_train, y_train)
+#     results = [mdc.predict(X) == y for X, y in zip(X_test, y_test)]
+#     print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
+#     plot_boundaries(mdc, X_all, y_all, "Minimal distance Classifier")
+#
+#     # Klasifikátor podle nejbližšího souseda
+#     print("k-Nearest Neighbours Classifier")
+#     knn = KNNClassifier(3)
+#     knn.train(X_train, y_train)
+#     results = [knn.predict(X) == y for X, y in zip(X_test, y_test)]
+#     print(f"Accuracy (vote): {sum(results)/len(results) *100:.2f}%")
+#     plot_boundaries(knn, X_all, y_all, "k-Nearest Neighbours Classifier (vote)")
+#     knn.vote = False
+#     results = [knn.predict(X) == y for X, y in zip(X_test, y_test)]
+#     print(f"Accuracy (dist): {sum(results)/len(results) *100:.2f}%")
+#     plot_boundaries(knn, X_all, y_all, "k-Nearest Neighbours Classifier (dist)")
+#
+#     # Bayesův klasifikátor
+#     print("Bayes Classifier")
+#     bay = BayesClassifier()
+#     bay.train(X_train, y_train)
+#     results = [bay.predict(X) == y for X, y in zip(X_test, y_test)]
+#     print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
+#     plot_boundaries(bay, X_all, y_all, "Bayes Classifier")
+#
+#     # Klasifikátor s lineárními diskriminačními funkcemi
+#     print("Linear Discriminant Classifier")
+#     lin = LinearDiscriminantClassifier(False, max_iters=1000)
+#     lin.train(X_train, y_train)
+#     results = [lin.predict(X) == y for X, y in zip(X_test, y_test)]
+#     print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
+#     plot_boundaries(lin, X_all, y_all, "Linear Discriminant Classifier")
+#
+#     # Klasifikátor s lineárními diskriminačními funkcemi
+#     print("Linear Discriminant Classifier (Rosenblatt)")
+#     lin = LinearDiscriminantClassifier(True, max_iters=1000)
+#     lin.train(X_train, y_train)
+#     results = [lin.predict(X) == y for X, y in zip(X_test, y_test)]
+#     print(f"Accuracy: {sum(results)/len(results) *100:.2f}%")
+#     plot_boundaries(lin, X_all, y_all, "Linear Discriminant Classifier (Rosenblatt)")
+#
+#     # NN
+#     # Simulace ne-separabilních 2D dat (3 třídy)
+#     # np.random.seed(42)
+#     # X_train = np.vstack([
+#     #     np.random.normal([-1, -1], 0.8, (100, 2)),
+#     #     np.random.normal([2, 1], 0.8, (100, 2)),
+#     #     np.random.normal([-1, 2], 0.8, (100, 2))
+#     # ])
+#     # y_train = np.array([0] * 100 + [1] * 100 + [2] * 100)
+#
+#     # --- EXPERIMENT 1: Vliv topologie ---
+#     # Srovnáme lineární model [2, 3] vs. mělkou síť [2, 6, 3] vs. hlubší síť [2, 16, 8, 3]
+#     topologies = {
+#         "Lineární (bez skryté vrstvy) [2, 3]": [2, 3],
+#         "Jedna skrytá vrstva [2, 8, 3]": [2, 8, 3],
+#         "Dvě skryté vrstvy [2, 16, 8, 3]": [2, 16, 8, 3]
+#     }
+#
+#     plt.figure(figsize=(10, 5))
+#     for name, topo in topologies.items():
+#         nn = SimpleNeuralNetwork(layer_sizes=topo, learning_rate=0.05)
+#         loss = nn.train(X_train, y_train, epochs=200, sgd=False)
+#         plt.plot(loss, label=name)
+#     plt.title("Srovnání topologií (Batch GD)")
+#     plt.xlabel("Epocha")
+#     plt.ylabel("Loss")
+#     plt.legend()
+#     plt.show()
+#
+#     # --- EXPERIMENT 2: Způsob trénování (SGD vs Batch GD) ---
+#     plt.figure(figsize=(10, 5))
+#     nn_batch = SimpleNeuralNetwork(layer_sizes=[2, 8, 3], learning_rate=0.05)
+#     loss_batch = nn_batch.train(X_train, y_train, epochs=300, sgd=False)
+#
+#     nn_sgd = SimpleNeuralNetwork(layer_sizes=[2, 8, 3], learning_rate=0.05)
+#     loss_sgd = nn_sgd.train(X_train, y_train, epochs=300, sgd=True)
+#
+#     plt.plot(loss_batch, label="Batch Gradient Descent")
+#     plt.plot(loss_sgd, label="Stochastic Gradient Descent (SGD)")
+#     plt.title("Srovnání způsobů trénování")
+#     plt.xlabel("Epocha")
+#     plt.ylabel("Loss")
+#     plt.legend()
+#     plt.show()
+#
+#     # --- EXPERIMENT 3: Volba konstanty učení (Learning Rate) ---
+#     lrs = [0.5, 0.05, 0.001]
+#     plt.figure(figsize=(10, 5))
+#     for lr in lrs:
+#         nn = SimpleNeuralNetwork(layer_sizes=[2, 8, 3], learning_rate=lr)
+#         loss = nn.train(X_train, y_train, epochs=200, sgd=False)
+#         plt.plot(loss, label=f"Alfa (learning rate) = {lr}")
+#     plt.title("Vliv konstanty učení na konvergenci")
+#     plt.xlabel("Epocha")
+#     plt.ylabel("Loss")
+#     plt.legend()
+#     plt.show()
+#
+#     for name, topo in topologies.items():
+#         nn = SimpleNeuralNetwork(layer_sizes=topo, learning_rate=0.05)
+#         loss = nn.train(X_train, y_train, epochs=200, sgd=False)
+#         plot_boundaries(nn, X_all, y_all, f"NN {name}")
+#
