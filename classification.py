@@ -257,7 +257,7 @@ class SimpleNeuralNetwork:
             self.z.append(z_curr)
             self.a.append(a_curr)
 
-        # Výstupní vrstva se Softmaxem (vhodné pro klasifikaci do více tříd)
+        # Výstupní vrstva se Softmax
         z_out = np.dot(self.a[-1], self.weights[-1]) + self.biases[-1]
         a_out = self._softmax(z_out)
         self.z.append(z_out)

@@ -1,3 +1,4 @@
+# Toto je pouze testovací soubor, sloužil k testování rychlosti maticových operací
 import numpy as np
 import time
 
